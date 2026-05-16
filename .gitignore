@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Data files (HESA, ONS, HO — not redistributable; params cached in paper_params.npz)
+data_1/
+data_2/
+data_3/
+
+# LaTeX build artefacts
+*.aux
+*.log
+*.bbl
+*.blg
+*.out
+*.toc
+*.spl
+
+# Debian packages
+*.deb
+
+# Claude session files
+.claude/
+
+# OS
+.DS_Store
