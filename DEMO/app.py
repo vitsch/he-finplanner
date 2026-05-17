@@ -19,7 +19,9 @@ Deployment:
 
 import sys
 import os
+import io
 import math
+import datetime
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -28,6 +30,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import streamlit as st
+from fpdf import FPDF
 
 # ── path setup ────────────────────────────────────────────────────────────────
 _DEMO_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -688,6 +691,200 @@ def _fig_entropy_traj_sim(results):
 
 
 # ── Tab 2: 12-Year Simulation (D4) ───────────────────────────────────────────
+def _board_pack_pdf(institution: str, results: dict, states: list,
+                    observations: list, model, sliders: dict) -> bytes:
+    """Generate a 2-page A4 PDF Board Pack from the current Tab 2 simulation."""
+    BLUE  = (31, 119, 180)
+    GREY  = (100, 100, 100)
+    WHITE = (255, 255, 255)
+    BLACK = (26, 26, 26)
+    inst  = institution.strip() or "Institution not specified"
+    today = datetime.date.today().strftime("%-d %B %Y")
+    W     = 180  # usable page width mm
+
+    def _fig_png(fig, w_mm):
+        fw, fh = fig.get_size_inches()
+        buf = io.BytesIO()
+        fig.savefig(buf, format="PNG", dpi=130, bbox_inches="tight",
+                    facecolor="white")
+        buf.seek(0)
+        plt.close(fig)
+        return buf, round(w_mm * fh / fw, 1)
+
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(15, 15, 15)
+
+    def _section(title):
+        pdf.set_font("Helvetica", "B", 9.5)
+        pdf.set_text_color(*BLUE)
+        pdf.cell(0, 6, title, ln=True)
+        pdf.set_text_color(*BLACK)
+
+    def _header_bar(subtitle):
+        pdf.set_fill_color(*BLUE)
+        pdf.rect(0, 0, 210, 22, "F")
+        pdf.set_xy(15, 5)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(*WHITE)
+        pdf.cell(130, 10, "POMDP Financial Planning Framework", ln=0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_xy(145, 7)
+        pdf.cell(50, 8, "Board Summary", align="R", ln=0)
+        pdf.set_xy(15, 26)
+        pdf.set_text_color(*BLACK)
+        pdf.set_font("Helvetica", "B", 10.5)
+        pdf.cell(120, 6, subtitle, ln=0)
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.set_xy(145, 27)
+        pdf.cell(50, 5, today, align="R", ln=0)
+        pdf.set_xy(15, 33)
+        pdf.set_font("Helvetica", "I", 7.5)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 5,
+                 f"gamma={sliders['gamma']:.2f}  delta={sliders['delta']:.2f}  "
+                 f"T={model.t_horizon} yr  U_min={sliders['u_min']:.0f}  "
+                 f"n_sat={sliders['n_sat']}",
+                 ln=True)
+        pdf.set_draw_color(*BLUE)
+        pdf.set_line_width(0.3)
+        pdf.line(15, 40, 195, 40)
+        pdf.set_y(43)
+
+    # ── PAGE 1: Executive Summary ─────────────────────────────────────────────
+    pdf.add_page()
+    _header_bar(inst)
+
+    _section("STRATEGY COMPARISON  (12-year simulation, common random numbers)")
+    pdf.set_y(pdf.get_y() + 1)
+
+    col_w = [73, 32, 28, 47]
+    pdf.set_font("Helvetica", "B", 8)
+    pdf.set_text_color(*WHITE)
+    pdf.set_fill_color(*BLUE)
+    for w, h in zip(col_w, ["Strategy", "Total reward", "Distress yrs", "Dominant action"]):
+        pdf.cell(w, 6, h, fill=True, border=0, ln=0, align="C")
+    pdf.ln(6)
+
+    best_r = max(results[l]["total_reward"]   for l in results)
+    best_d = min(results[l]["distress_count"] for l in results)
+    alt = False
+    for label, _ in _SIM_STRATEGIES:
+        r   = results[label]
+        dom = ACTION_NAMES[max(range(N_ACTIONS),
+                               key=lambda a, acts=r["actions"]: acts.count(a))]
+        rew_s = f"{r['total_reward']:.1f}" + (" *" if abs(r["total_reward"] - best_r) < 0.1 else "")
+        dis_s = str(r["distress_count"]) + (" *" if r["distress_count"] == best_d else "")
+        is_uf = (label == "Unified Framework")
+        pdf.set_fill_color(235, 242, 250) if alt else pdf.set_fill_color(*WHITE)
+        pdf.set_font("Helvetica", "B" if is_uf else "", 8)
+        pdf.set_text_color(*(BLUE if is_uf else BLACK))
+        for w, v, a in zip(col_w, [label, rew_s, dis_s, dom], ["L", "C", "C", "L"]):
+            pdf.cell(w, 6, v, fill=True, border=0, ln=0, align=a)
+        pdf.ln(6)
+        alt = not alt
+
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.set_text_color(*GREY)
+    pdf.cell(0, 5,
+             "* = best in column.  Unified Framework (bold) is the paper's primary contribution.",
+             ln=True)
+    pdf.ln(1)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(3)
+
+    _section("RECOMMENDED POSTURE  (Unified Framework, year-by-year)")
+    uf = results["Unified Framework"]["actions"]
+    cw = W / model.t_horizon
+    pdf.set_font("Helvetica", "B", 7)
+    pdf.set_fill_color(*BLUE)
+    pdf.set_text_color(*WHITE)
+    for yr in range(model.t_horizon):
+        pdf.cell(cw, 5, f"Yr {yr + 1}", fill=True, border=0, align="C", ln=0)
+    pdf.ln(5)
+    ACT_RGB = {
+        "Conserve":    (214,  39,  40),
+        "Maintain":    ( 31, 119, 180),
+        "Recruit":     ( 44, 160,  44),
+        "Invest":      (148, 103, 189),
+        "Rationalise": (255, 127,  14),
+    }
+    pdf.set_font("Helvetica", "B", 6.5)
+    for a in uf:
+        name = ACTION_NAMES[a]
+        pdf.set_fill_color(*ACT_RGB.get(name, (150, 150, 150)))
+        pdf.set_text_color(*WHITE)
+        pdf.cell(cw, 5.5, name[:5], fill=True, border=0, align="C", ln=0)
+    pdf.ln(7)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+    pdf.ln(3)
+
+    _section("METHODOLOGY")
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*BLACK)
+    pdf.multi_cell(0, 4.5,
+        "This analysis applies an entropy-driven Partially Observable Markov Decision "
+        "Process (POMDP) calibrated on Russell Group enrolment and finance data (HESA "
+        "2004-2017).  The Unified Framework integrates seven sub-routines (SR1-SR7) "
+        "co-ordinated by Shannon entropy H(b_t) of the institutional belief state.  "
+        "Six competing strategies are run on a shared observation path (common random "
+        "numbers) to isolate strategy quality from path luck.  A satisficing gate (SR3) "
+        "ensures all recommended postures remain viable across Monte Carlo scenarios "
+        "before selection.")
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "I", 7.5)
+    pdf.set_text_color(*GREY)
+    pdf.multi_cell(0, 4,
+        "Schetinin, V. (2026). Entropy-Driven POMDP for UK Higher Education Financial "
+        "Management. Socio-Economic Planning Sciences (submitted).  "
+        "SSRN preprint doi:10.2139/ssrn.6308238")
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.cell(0, 5,
+             "Generated by he-finplanner | github.com/vitsch/he-finplanner"
+             " | For board use only",
+             align="C", ln=True)
+
+    # ── PAGE 2: Simulation Charts ─────────────────────────────────────────────
+    pdf.add_page()
+    _header_bar(inst)
+
+    def _embed(fig, title, caption_text):
+        buf, h = _fig_png(fig, W)
+        _section(title)
+        pdf.set_font("Helvetica", "I", 7.5)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 4, caption_text, ln=True)
+        pdf.ln(1)
+        pdf.image(buf, x=15, w=W, h=h)
+        pdf.ln(4)
+
+    _embed(
+        _fig_state_obs_strip(states, observations),
+        "SIMULATED REGIME PATH",
+        "Top: true hidden regime (sampled from T_true).  Bottom: enrolment signal (drives belief updates).",
+    )
+    _embed(
+        _fig_action_heatmap(results),
+        "ACTION MAP - ALL STRATEGIES",
+        "Colour = recommended strategic posture per strategy and planning year.",
+    )
+    _embed(
+        _fig_cumulative_rewards_sim(results, model.gamma),
+        "CUMULATIVE DISCOUNTED REWARD TRAJECTORIES",
+        f"Discounted at gamma = {model.gamma:.2f}.  Higher = better; "
+        "Unified Framework targets the top-right envelope.",
+    )
+
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.set_text_color(*GREY)
+    pdf.cell(0, 5,
+             f"Generated {today} | github.com/vitsch/he-finplanner | Confidential",
+             align="C", ln=True)
+
+    return bytes(pdf.output())
+
+
 def _tab_simulation(model, sliders):
     if st.session_state.get("calib6_active", False):
         st.info(
@@ -795,6 +992,26 @@ def _tab_simulation(model, sliders):
 
         st.subheader("Belief entropy")
         st.pyplot(_fig_entropy_traj_sim(results), use_container_width=True)
+
+        # ── Board Pack PDF download ───────────────────────────────────────────
+        st.markdown("---")
+        st.subheader("Download Board Pack")
+        st.caption(
+            "2-page A4 PDF: strategy comparison table, year-by-year posture "
+            "strip, and simulation charts.  Suitable for finance-director briefings.")
+        bp_inst = st.text_input(
+            "Institution name (appears on PDF cover)",
+            placeholder="e.g. University of Bedfordshire",
+            key="sim4_institution")
+        pdf_bytes = _board_pack_pdf(
+            bp_inst, results, states, observations, model, sliders)
+        safe = (bp_inst.strip().replace(" ", "_") or "POMDP")
+        st.download_button(
+            "⬇  Download Board Pack PDF",
+            data=pdf_bytes,
+            file_name=f"board_pack_{safe}.pdf",
+            mime="application/pdf",
+            key="sim4_dl_pdf")
 
 
 # ── MC comparison plot functions (D5) ────────────────────────────────────────
