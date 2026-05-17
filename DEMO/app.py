@@ -241,8 +241,10 @@ def _render_sidebar():
             "**Author**  \n"
             "Vitaly Schetinin  \n"
             "University of Bedfordshire  \n\n"
-            "*All processing runs in your local session — no data is "
-            "stored or transmitted.*")
+            "*When running locally, all processing runs on your machine — "
+            "no data is stored or transmitted.  "
+            "The public Community Cloud link is for exploration with the "
+            "built-in Russell Group parameters only.*")
 
     return dict(gamma=gamma, delta=delta, u_min=u_min,
                 lambda_v=lambda_v, mu_ov=mu_ov, n_sat=n_sat, b0=b0)
@@ -1136,7 +1138,15 @@ def _tab_calibrate(model, sliders):
         "T and Ω using the same Laplace-smoothed pipeline as the paper.  "
         "Once activated, all other tabs use your matrices instead of the "
         "HESA Russell Group parameters.  "
-        "All processing runs in your local session — no data is stored or transmitted.")
+        "When running locally, all processing runs on your machine — "
+        "no data is stored or transmitted.")
+
+    st.warning(
+        "⚠️ **Data notice** — if you are using the public Community Cloud link, "
+        "data uploaded here is processed on Streamlit's US servers.  "
+        "For real institutional enrolment data, run locally: "
+        "`streamlit run DEMO/app.py`."
+    )
 
     # ── CSV format guide ──────────────────────────────────────────────────────
     with st.expander("CSV format and example", expanded=False):
