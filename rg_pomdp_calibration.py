@@ -20,7 +20,7 @@ from hmmlearn import hmm
 import warnings, os, zipfile, csv, io
 warnings.filterwarnings('ignore')
 
-WD = "/home/vs/Downloads/Project_University_Managment "
+WD = os.path.dirname(os.path.abspath(__file__))
 os.chdir(WD)
 
 DATA_FILES = {

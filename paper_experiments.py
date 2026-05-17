@@ -20,7 +20,7 @@ from statsmodels.tsa.arima.model import ARIMA
 warnings.filterwarnings('ignore')
 
 # ── Import calibration pipeline from rg_pomdp_calibration ──
-WD = "/home/vs/Downloads/Project_University_Managment "
+WD = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, WD)
 os.chdir(WD)
 import rg_pomdp_calibration as rg   # noqa: E402 — side-effect: sets WD
