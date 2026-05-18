@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+.venv/
 
 # Data files (HESA, ONS, HO — not redistributable; params cached in paper_params.npz)
 data_1/

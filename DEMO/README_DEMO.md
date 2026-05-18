@@ -22,7 +22,44 @@ Sidebar sliders control all framework hyperparameters (γ, δ, U_min, λ_VoI, μ
 
 ---
 
-## Running locally
+## Mac Quick Start (recommended for Mac users)
+
+`Launch FinPlanner.command` in the project root is a double-clickable launcher
+that handles the Python environment automatically.
+
+### One-off setup (in Terminal)
+
+```bash
+brew install uv
+```
+
+[Homebrew](https://brew.sh) must be installed first if not already present
+(`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`).
+
+### First launch
+
+1. Download or clone the repository.
+2. If macOS blocks the file: **right-click → Open** (Gatekeeper warning; once only).
+3. Double-click `Launch FinPlanner.command`.
+4. A Terminal window opens; on first run it creates the Python environment (~30 s).
+5. The browser opens automatically at `http://localhost:8501`.
+
+### Subsequent launches
+
+Double-click `Launch FinPlanner.command` — the app starts in ~3 seconds.
+
+### To stop the app
+
+Close the Terminal window (or press `Ctrl-C` inside it).
+
+### Data security
+
+All processing runs on your Mac (`localhost:8501`).  No data leaves your machine.
+Disconnect Wi-Fi — the app still works.
+
+---
+
+## Running locally (any platform)
 
 ```bash
 # From the project root
