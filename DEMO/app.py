@@ -179,6 +179,15 @@ def _reset_session(b0):
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
 def _render_sidebar():
+    # ── URL param helpers (D13) ───────────────────────────────────────────────
+    _qp = st.query_params
+    def _qf(key, default):
+        try:    return float(_qp[key])
+        except: return default
+    def _qi(key, default):
+        try:    return int(_qp[key])
+        except: return default
+
     st.sidebar.title("Framework Parameters")
     st.sidebar.caption("All defaults match the paper (Schetinin 2026, §5).")
     st.sidebar.markdown("---")
@@ -186,39 +195,39 @@ def _render_sidebar():
     st.sidebar.subheader("Core")
     gamma = st.sidebar.slider(
         "γ — discount factor", 0.80, 0.99,
-        float(PAPER_DEFAULTS["gamma"]), 0.01,
+        _qf("g",  float(PAPER_DEFAULTS["gamma"])), 0.01,
         help="Per-cycle future reward discount (paper: 0.95)")
     delta = st.sidebar.slider(
         "δ — SR3 risk tolerance", 0.01, 0.30,
-        float(PAPER_DEFAULTS["delta"]), 0.01,
+        _qf("d",  float(PAPER_DEFAULTS["delta"])), 0.01,
         help="SR3 gate: actions with P_sat < 1−δ eliminated (paper: 0.10)")
     u_min = st.sidebar.slider(
         "U_min — satisficing floor", -50.0, -5.0,
-        float(PAPER_DEFAULTS["u_min"]), 1.0,
+        _qf("u",  float(PAPER_DEFAULTS["u_min"])), 1.0,
         help="Minimum acceptable cumulative reward over 12 years (paper: −25)")
 
     st.sidebar.subheader("SR4 / SR5 weights")
     lambda_v = st.sidebar.slider(
         "λ_VoI — SR4 weight", 0.5, 3.0,
-        float(PAPER_DEFAULTS["lambda_v"]), 0.1,
+        _qf("lv", float(PAPER_DEFAULTS["lambda_v"])), 0.1,
         help="Bonus added to Q[Recruit] proportional to myopic VoI (paper: 1.5)")
     mu_ov = st.sidebar.slider(
         "μ_OV — SR5 weight", 0.5, 2.5,
-        float(PAPER_DEFAULTS["mu_ov"]), 0.1,
+        _qf("mo", float(PAPER_DEFAULTS["mu_ov"])), 0.1,
         help="Penalty subtracted from Q[Invest/Rationalise] for option value (paper: 1.2)")
 
     st.sidebar.subheader("SR3 precision")
     n_sat = st.sidebar.slider(
         "n_sat — rollouts", 10, 60,
-        int(PAPER_DEFAULTS["n_sat"]), 5,
+        _qi("ns", int(PAPER_DEFAULTS["n_sat"])), 5,
         help="MC rollouts for satisficing probability (paper: 30; fewer = faster UI)")
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Initial belief  b₀")
     st.sidebar.caption("Auto-normalised.")
-    b0_low    = st.sidebar.slider("b₀(Low)",    0.01, 0.98, 0.159, 0.001)
-    b0_stable = st.sidebar.slider("b₀(Stable)", 0.01, 0.98, 0.730, 0.001)
-    b0_growth = st.sidebar.slider("b₀(Growth)", 0.01, 0.98, 0.111, 0.001)
+    b0_low    = st.sidebar.slider("b₀(Low)",    0.01, 0.98, _qf("b0l", 0.159), 0.001)
+    b0_stable = st.sidebar.slider("b₀(Stable)", 0.01, 0.98, _qf("b0s", 0.730), 0.001)
+    b0_growth = st.sidebar.slider("b₀(Growth)", 0.01, 0.98, _qf("b0g", 0.111), 0.001)
     b0_raw    = np.array([b0_low, b0_stable, b0_growth])
     b0        = b0_raw / b0_raw.sum()
     st.sidebar.caption(
@@ -248,6 +257,33 @@ def _render_sidebar():
             "no data is stored or transmitted.  "
             "The public Community Cloud link is for exploration with the "
             "built-in Russell Group parameters only.*")
+
+    # ── Share button (D13) ───────────────────────────────────────────────────
+    if st.sidebar.button("📎  Share this configuration",
+                         use_container_width=True,
+                         help="Updates the URL so you can copy and share it"):
+        sc_val   = st.session_state.get("sim4_scenario_sel", "")
+        seed_val = st.session_state.get("sim4_seed_input", 42)
+        update   = {
+            "g":   f"{gamma:.2f}",
+            "d":   f"{delta:.2f}",
+            "u":   f"{u_min:.0f}",
+            "lv":  f"{lambda_v:.1f}",
+            "mo":  f"{mu_ov:.1f}",
+            "ns":  str(n_sat),
+            "b0l": f"{b0_low:.3f}",
+            "b0s": f"{b0_stable:.3f}",
+            "b0g": f"{b0_growth:.3f}",
+        }
+        if sc_val and sc_val != "Random (model-consistent)":
+            update["sc"] = sc_val
+        if int(seed_val) != 42:
+            update["seed"] = str(int(seed_val))
+        st.query_params.update(update)
+
+    if any(k in _qp for k in ("g", "d", "u", "lv", "mo", "ns",
+                               "b0l", "b0s", "b0g", "sc", "seed")):
+        st.sidebar.caption("🔗 Configuration loaded from shared URL.")
 
     return dict(gamma=gamma, delta=delta, u_min=u_min,
                 lambda_v=lambda_v, mu_ov=mu_ov, n_sat=n_sat, b0=b0)
@@ -990,15 +1026,20 @@ def _tab_simulation(model, sliders):
         "either model-consistent, pre-defined, or custom.")
 
     # ── Controls ──────────────────────────────────────────────────────────────
+    _sc_opts = ["Random (model-consistent)"] + list(_PRESET_OBS.keys()) + ["Custom"]
+    _qp_sc   = st.query_params.get("sc", "")
+    _sc_idx  = _sc_opts.index(_qp_sc) if _qp_sc in _sc_opts else 0
+    try:    _qp_seed = int(st.query_params.get("seed", "42"))
+    except: _qp_seed = 42
+
     ctrl1, ctrl2, ctrl3 = st.columns([3, 2, 2])
     with ctrl1:
         scenario = st.selectbox(
-            "Scenario",
-            ["Random (model-consistent)"] + list(_PRESET_OBS.keys()) + ["Custom"],
-            index=0, key="sim4_scenario_sel")
+            "Scenario", _sc_opts,
+            index=_sc_idx, key="sim4_scenario_sel")
     with ctrl2:
         path_seed = int(st.number_input(
-            "Path seed", min_value=0, max_value=9999, value=42, step=1,
+            "Path seed", min_value=0, max_value=9999, value=_qp_seed, step=1,
             key="sim4_seed_input"))
     with ctrl3:
         run_btn = st.button("▶  Run Simulation", type="primary",
