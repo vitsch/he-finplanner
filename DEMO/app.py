@@ -351,6 +351,93 @@ _OBS_DESC = {
     "Strong":   "Above-trend growth  (coincident with Growth regime)",
 }
 
+# Plain-English rationale for each action (title, one-sentence explanation)
+_ACTION_RATIONALE = {
+    CONSERVE:    ("Protect liquidity",
+                  "Cut discretionary spend and defer investment.  "
+                  "Used when financial risk is elevated or the regime is uncertain."),
+    MAINTAIN:    ("Hold current strategy",
+                  "Sustain staffing and services at present levels.  "
+                  "The default posture when the outlook is stable."),
+    RECRUIT:     ("Grow enrolment",
+                  "Invest in recruitment campaigns and student-facing capacity.  "
+                  "Chosen when growth signals are detected and finances are sound."),
+    INVEST:      ("Expand infrastructure",
+                  "Commit capital to facilities, programmes, or digital infrastructure.  "
+                  "High-return, high-risk — viable only when distress probability is low."),
+    RATIONALISE: ("Restructure",
+                  "Consolidate programmes and release cost-base capacity.  "
+                  "A corrective posture when persistent decline threatens viability."),
+}
+
+_STATE_PLAIN = {
+    "Low":    "financial stress — declining or flat enrolment, constrained margins",
+    "Stable": "steady state — on-trend enrolment, balanced budget",
+    "Growth": "expansion — above-trend enrolment, improving margins",
+}
+
+
+def _entropy_commentary(H, b):
+    """One-sentence plain-English interpretation of the current entropy + belief."""
+    dominant = STATE_NAMES[int(np.argmax(b))]
+    dom_pct  = float(b[np.argmax(b)])
+    if H < _H_MAX * 0.33:
+        return (
+            f"**Low uncertainty** (H = {H:.2f}) — the framework is {dom_pct:.0%} "
+            f"confident your institution is in the **{dominant}** regime "
+            f"({_STATE_PLAIN[dominant]}).  "
+            "The satisficing gate is relaxed and the full posture menu is available."
+        )
+    elif H < _H_MAX * 0.70:
+        return (
+            f"**Moderate uncertainty** (H = {H:.2f}) — the **{dominant}** regime "
+            f"is most likely ({dom_pct:.0%}) but not confirmed.  "
+            "SR2 blending is active; the framework is weighing both optimistic "
+            "and conservative options."
+        )
+    else:
+        return (
+            f"**High uncertainty** (H = {H:.2f}) — signals are mixed and no single "
+            "regime dominates the belief.  "
+            "The satisficing gate (SR3) is most active and will restrict high-risk postures."
+        )
+
+
+def _sim_plain_english(results):
+    """Key-finding paragraph for the Tab 2 strategy comparison table."""
+    uf        = results["Unified Framework"]
+    best_lbl  = max(results, key=lambda l: results[l]["total_reward"])
+    worst_d   = max(results[l]["distress_count"] for l in results)
+    lines = []
+
+    if best_lbl == "Unified Framework":
+        lines.append(
+            f"**Key finding on this path:** The Unified Framework achieved the "
+            f"highest total reward ({uf['total_reward']:.1f}) with "
+            f"{uf['distress_count']} distress year(s) — consistent with Table 4 "
+            f"of the paper (349.2 reward, 1.1 % distress over 500 MC paths)."
+        )
+    else:
+        br = results[best_lbl]["total_reward"]
+        lines.append(
+            f"**Key finding on this path:** {best_lbl} led with {br:.1f} reward; "
+            f"the Unified Framework scored {uf['total_reward']:.1f}.  "
+            "Path-level rankings vary — over 500 MC paths the Unified Framework "
+            "leads (Table 4: 349.2 reward, 1.1 % distress)."
+        )
+
+    if uf["distress_count"] == 0:
+        lines.append(
+            "The Unified Framework's satisficing gate prevented all distress years on this path."
+        )
+    elif uf["distress_count"] < worst_d:
+        lines.append(
+            f"The satisficing gate held the Unified Framework's distress to "
+            f"{uf['distress_count']} year(s), versus {worst_d} in the most "
+            "aggressive strategy."
+        )
+    return "  \n".join(lines)
+
 
 def _tab_year_by_year(model, sliders):
     if st.session_state.get("calib6_active", False):
@@ -407,6 +494,8 @@ def _tab_year_by_year(model, sliders):
                 f"(max = ln 3 ≈ 1.099)  \n"
                 f"**Year:** {t + 1} / {model.t_horizon}")
 
+        st.caption(_entropy_commentary(H, b))
+
         # ── Recommendation badge ──────────────────────────────────────────────
         st.markdown("---")
         col_rec, col_sr3 = st.columns([2, 3])
@@ -430,6 +519,9 @@ def _tab_year_by_year(model, sliders):
                         f"✅ **SR3 passed** — P_sat = {sat_prob:.2f} "
                         f"≥ {1 - model.delta:.2f}.  "
                         f"All viable actions evaluated.")
+
+        title, rationale = _ACTION_RATIONALE[action]
+        st.info(f"**{title}** — {rationale}")
 
         # ── Q-value breakdown ─────────────────────────────────────────────────
         with st.expander("Q-value breakdown (SR4 / SR5 adjustments)", expanded=False):
@@ -981,6 +1073,7 @@ def _tab_simulation(model, sliders):
         st.dataframe(pd.DataFrame(rows).set_index("Strategy"),
                      use_container_width=True)
         st.caption("★ = best in column on this path.")
+        st.info(_sim_plain_english(results))
 
         st.markdown("---")
         st.subheader("Reward trajectories")
@@ -989,9 +1082,31 @@ def _tab_simulation(model, sliders):
 
         st.subheader("Action map")
         st.pyplot(_fig_action_heatmap(results), use_container_width=True)
+        uf_acts  = results["Unified Framework"]["actions"]
+        dom_idx  = max(range(N_ACTIONS), key=lambda a: uf_acts.count(a))
+        dom_name = ACTION_NAMES[dom_idx]
+        n_dom    = uf_acts.count(dom_idx)
+        _t, _r   = _ACTION_RATIONALE[dom_idx]
+        st.caption(
+            f"The Unified Framework chose **{dom_name}** in {n_dom} of "
+            f"{model.t_horizon} years on this path.  "
+            f"_{_t}: {_r}_")
 
         st.subheader("Belief entropy")
         st.pyplot(_fig_entropy_traj_sim(results), use_container_width=True)
+        _ents   = results["Unified Framework"]["entropies"]
+        _pk_yr  = int(np.argmax(_ents)) + 1
+        _pk_H   = float(max(_ents))
+        _fin_H  = float(_ents[-1])
+        if _fin_H < _H_MAX * 0.33:
+            _trend = "resolved toward low uncertainty — beliefs have converged on a single regime"
+        elif _fin_H < _H_MAX * 0.70:
+            _trend = "settled at moderate uncertainty — some ambiguity remains at the planning horizon"
+        else:
+            _trend = "remaining at high uncertainty — the regime is still ambiguous at Year 12"
+        st.caption(
+            f"Entropy peaked at **{_pk_H:.2f}** in Year {_pk_yr} — when the satisficing "
+            f"gate was most cautious.  By Year {model.t_horizon} the trajectory is {_trend}.")
 
         # ── Board Pack PDF download ───────────────────────────────────────────
         st.markdown("---")
